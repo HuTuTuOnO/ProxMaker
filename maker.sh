@@ -1,27 +1,11 @@
 #!/bin/bash
 set -e 
 
-log_title() {
-    printf '\n%s\n%s\n%s\n' "=====================================================" "$1" "====================================================="
-}
-
-log_info() {
-    printf '[INFO] %s\n' "$1"
-}
-
-log_success() {
-    printf '[OK] %s\n' "$1"
-}
-
-log_error() {
-    printf '[ERROR] %s\n' "$1" >&2
-}
-
 # =================================================================
 # 1. 环境依赖检查
 # =================================================================
 if ! command -v virt-customize &> /dev/null; then
-    log_info "正在安装必要工具: libguestfs-tools"
+    echo "[INFO] 正在安装必要工具: libguestfs-tools"
     apt update && apt install -y libguestfs-tools wget
 fi
 
@@ -30,7 +14,7 @@ fi
 # =================================================================
 STORAGE="local"       # 存储 ID (支持 Directory/LVM/ZFS)
 BRIDGE="vmbr0"        # 默认网桥
-DISK_SIZE="40G"       # 自动扩容的目标大小
+DISK_SIZE="20G"       # 自动扩容的目标大小
 
 declare -A IMAGES
 IMAGES=(
@@ -45,10 +29,13 @@ IMAGES=(
 # =================================================================
 # 3. 交互与准备
 # =================================================================
-log_title "ProxMaker"
+echo
+echo "====================================================="
+echo "                      ProxMaker"
+echo "====================================================="
 for key in $(echo ${!IMAGES[@]} | tr ' ' '\n' | sort -n); do
     NAME=$(echo ${IMAGES[$key]} | cut -d'|' -f1)
-    printf '  %s) %s\n' "$key" "$NAME"
+    echo "  $key) $NAME"
 done
 
 read -p "请选择系统编号 [1-6] (默认: 1): " CHOICE
@@ -59,7 +46,7 @@ VMID=${VMID:-9000}
 
 SELECTED=${IMAGES[$CHOICE]}
 if [ -z "$SELECTED" ]; then
-    log_error "无效选择"
+    echo "[ERROR] 无效选择" >&2
     exit 1
 fi
 
@@ -69,14 +56,14 @@ IMG_FILE=$(basename $IMG_URL)
 
 # 下载镜像
 if [ ! -f "$IMG_FILE" ]; then
-    log_info "正在下载 $OS_NAME 镜像"
+    echo "[INFO] 正在下载 $OS_NAME 镜像"
     wget -q --show-progress -O "$IMG_FILE" "$IMG_URL"
 fi
 
 # =================================================================
 # 4. 离线注入配置 (核心修复部分)
 # =================================================================
-log_info "正在修改镜像配置"
+echo "[INFO] 正在修改镜像配置"
 
 virt-customize -a "$IMG_FILE" \
     --install qemu-guest-agent,cloud-init \
@@ -95,10 +82,10 @@ virt-customize -a "$IMG_FILE" \
 # =================================================================
 # 5. 构建 PVE 虚拟机
 # =================================================================
-log_info "正在创建虚拟机并导入磁盘 (ID: $VMID)"
+echo "[INFO] 正在创建虚拟机并导入磁盘 (ID: $VMID)"
 
 # 创建 VM 基础配置
-qm create $VMID --name "tpl-$OS_NAME" --memory 2048 --cores 2 --net0 virtio,bridge=$BRIDGE
+qm create $VMID --name "ProxMaker-$OS_NAME" --memory 2048 --cores 2 --net0 virtio,bridge=$BRIDGE
 
 # 导入磁盘：使用 import-from 自动处理路径与命名
 qm set $VMID --scsihw virtio-scsi-pci \
@@ -113,17 +100,17 @@ qm set $VMID --serial0 socket --vga serial0
 qm set $VMID --agent enabled=1
 
 # 调整磁盘大小
-log_info "正在扩展磁盘空间至 $DISK_SIZE"
+echo "[INFO] 正在扩展磁盘空间至 $DISK_SIZE"
 qm disk resize $VMID scsi0 $DISK_SIZE
 
 # 转换成模版
-log_info "正在转换为 PVE 模版"
+echo "[INFO] 正在转换为 PVE 模版"
 qm template $VMID
 
-printf '\n'
-log_success "创建成功"
-log_info "模版名称: tpl-$OS_NAME"
-log_info "模版 ID: $VMID"
-log_info "使用建议:"
-log_info "1. 在部署(Clone)前，请在 Web UI 的 Cloud-Init 栏目设置用户密码。"
-log_info "2. 建议先点击 'Regenerate Image' (重生成) 再启动。"
+echo
+echo "[OK] 创建成功"
+echo "[INFO] 模版名称: ProxMaker-$OS_NAME"
+echo "[INFO] 模版 ID: $VMID"
+echo "[INFO] 使用建议:"
+echo "[INFO] 1. 在部署(Clone)前，请在 Web UI 的 Cloud-Init 栏目设置用户密码。"
+echo "[INFO] 2. 建议先点击 'Regenerate Image' (重生成) 再启动。"
