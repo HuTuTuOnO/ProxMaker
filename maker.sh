@@ -31,7 +31,7 @@ IMAGES=(
 # =================================================================
 echo
 echo "====================================================="
-echo "                      ProxMaker"
+echo "                      Maker"
 echo "====================================================="
 for key in $(echo ${!IMAGES[@]} | tr ' ' '\n' | sort -n); do
     NAME=$(echo ${IMAGES[$key]} | cut -d'|' -f1)
@@ -61,11 +61,11 @@ if [ ! -f "$IMG_FILE" ]; then
 fi
 
 # =================================================================
-# 4. 离线注入配置 (核心修复部分)
+# 4. 修改镜像配置
 # =================================================================
 echo "[INFO] 正在修改镜像配置"
 
-virt-customize -a "$IMG_FILE" \
+virt-customize -q -a "$IMG_FILE" \
     --install qemu-guest-agent,cloud-init \
     --run-command "rm -f /etc/ssh/sshd_config.d/*.conf" \
     --run-command "sed -i '/PermitRootLogin/d' /etc/ssh/sshd_config" \
@@ -80,15 +80,20 @@ virt-customize -a "$IMG_FILE" \
     --run-command "find /var/log -type f -exec truncate -s 0 {} \;"
 
 # =================================================================
-# 5. 构建 PVE 虚拟机
+# 5. 构建虚拟机
 # =================================================================
 echo "[INFO] 正在创建虚拟机并导入磁盘 (ID: $VMID)"
 
 # 创建 VM 基础配置
-qm create $VMID --name "ProxMaker-$OS_NAME" --memory 2048 --cores 2 --net0 virtio,bridge=$BRIDGE
+qm create $VMID \
+    --name "Maker-$OS_NAME" \
+    --memory 2048 \
+    --cores 2 \
+    --net0 virtio,bridge=$BRIDGE
 
 # 导入磁盘：使用 import-from 自动处理路径与命名
-qm set $VMID --scsihw virtio-scsi-pci \
+qm set $VMID \
+    --scsihw virtio-scsi-pci \
     --scsi0 $STORAGE:0,import-from=$(pwd)/$IMG_FILE,discard=on
 
 # 添加 Cloud-Init CD-ROM
@@ -109,8 +114,5 @@ qm template $VMID
 
 echo
 echo "[OK] 创建成功"
-echo "[INFO] 模版名称: ProxMaker-$OS_NAME"
+echo "[INFO] 模版名称: Maker-$OS_NAME"
 echo "[INFO] 模版 ID: $VMID"
-echo "[INFO] 使用建议:"
-echo "[INFO] 1. 在部署(Clone)前，请在 Web UI 的 Cloud-Init 栏目设置用户密码。"
-echo "[INFO] 2. 建议先点击 'Regenerate Image' (重生成) 再启动。"
