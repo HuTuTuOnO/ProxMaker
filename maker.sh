@@ -38,17 +38,38 @@ for key in $(echo ${!IMAGES[@]} | tr ' ' '\n' | sort -n); do
     echo "  $key) $NAME"
 done
 
+read -p "请输入欲创建的 VM BIOS (默认: SeaBIOS): " BIOS
+BIOS=${BIOS:-SeaBIOS}
+
+case "$BIOS" in
+    SeaBIOS|seabios)
+        BIOS_TYPE="seabios"
+        MACHINE="i440fx"
+        ;;
+    UEFI|uefi|OVMF|ovmf)
+        BIOS_TYPE="ovmf"
+        MACHINE="q35"
+        ;;
+    *)
+        echo "[ERROR] 无效 BIOS 类型: $BIOS" >&2
+        echo "[INFO] 可选值: SeaBIOS, UEFI" >&2
+        exit 1
+        ;;
+esac
+
+
 read -p "请选择系统编号 [1-6] (默认: 1): " CHOICE
 CHOICE=${CHOICE:-1}
-
-read -p "请输入欲创建的 VM ID (默认: 9000): " VMID
-VMID=${VMID:-9000}
 
 SELECTED=${IMAGES[$CHOICE]}
 if [ -z "$SELECTED" ]; then
     echo "[ERROR] 无效选择" >&2
     exit 1
 fi
+
+read -p "请输入欲创建的 VM ID (默认: 9000): " VMID
+VMID=${VMID:-9000}
+
 
 OS_NAME=$(echo $SELECTED | cut -d'|' -f1)
 IMG_URL=$(echo $SELECTED | cut -d'|' -f2)
@@ -87,6 +108,10 @@ echo "[INFO] 正在创建虚拟机并导入磁盘 (ID: $VMID)"
 # 创建 VM 基础配置
 qm create $VMID \
     --name "Maker-$OS_NAME" \
+    --ostype l26 \
+    --bios $BIOS_TYPE \
+    --machine $MACHINE \
+    --cpu host \
     --memory 2048 \
     --cores 2 \
     --net0 virtio,bridge=$BRIDGE
@@ -99,9 +124,14 @@ qm set $VMID \
 # 添加 Cloud-Init CD-ROM
 qm set $VMID --ide2 $STORAGE:cloudinit
 
+# UEFI 模式需要 EFI 磁盘
+if [ "$BIOS_TYPE" = "ovmf" ]; then
+    qm set $VMID --efidisk0 $STORAGE:0,efitype=4m,pre-enrolled-keys=0
+fi
+
 # 关键系统设置
 qm set $VMID --boot c --bootdisk scsi0
-qm set $VMID --serial0 socket --vga serial0
+qm set $VMID --serial0 socket 
 qm set $VMID --agent enabled=1
 
 # 调整磁盘大小
